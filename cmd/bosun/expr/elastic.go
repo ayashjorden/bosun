@@ -11,7 +11,8 @@ import (
 	"bosun.org/opentsdb"
 	"github.com/MiniProfiler/go/miniprofiler"
 	"github.com/jinzhu/now"
-	elastic "gopkg.in/olivere/elastic.v3"
+	"golang.org/x/net/context"
+	elastic "gopkg.in/olivere/elastic.v5"
 	"sync"
 )
 
@@ -310,13 +311,12 @@ func (e ElasticHosts) Query(r *ElasticRequest) (*elastic.SearchResult, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	s.Index(r.Indices...)
-
-	// With IgnoreUnavailable there can be gaps in the indices (i.e. missing days) and we will not error
-	// If no indices match than there will be no successful shards and and error is returned in that case
-	s.IgnoreUnavailable(true)
-	res, err := s.SearchSource(r.Source).Do()
+	res, err := s.Index(r.Indices...).
+		// With IgnoreUnavailable there can be gaps in the indices (i.e. missing days) and we will not error
+		// If no indices match than there will be no successful shards and and error is returned in that case
+		IgnoreUnavailable(true).
+		SearchSource(r.Source).
+		Do(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +452,13 @@ func ESDateHistogram(prefix string, e *State, T miniprofiler.Timer, indexer ESIn
 		return nil, err
 	}
 	// Extended bounds and min doc count are required to get values back when the bucket value is 0
-	ts := elastic.NewDateHistogramAggregation().Field(indexer.TimeField).Interval(strings.Replace(interval, "M", "n", -1)).MinDocCount(0).ExtendedBoundsMin(req.Start).ExtendedBoundsMax(req.End).Format(elasticRFC3339)
+	ts := elastic.NewDateHistogramAggregation().
+		Field(indexer.TimeField).
+		Interval(strings.Replace(interval, "M", "n", -1)).
+		MinDocCount(0).
+		ExtendedBoundsMin(req.Start).
+		ExtendedBoundsMax(req.End).
+		Format(elasticRFC3339)
 	if stat_field != "" {
 		ts = ts.SubAggregation("stats", elastic.NewExtendedStatsAggregation().Field(stat_field))
 		switch rstat {
@@ -475,7 +481,7 @@ func ESDateHistogram(prefix string, e *State, T miniprofiler.Timer, indexer ESIn
 		for _, v := range ts.Buckets {
 			val := processESBucketItem(v, rstat)
 			if val != nil {
-				series[time.Unix(v.Key/1000, 0).UTC()] = *val
+				series[time.Unix(int64(v.Key)/1000, 0).UTC()] = *val
 			}
 		}
 		if len(series) == 0 {
@@ -488,10 +494,13 @@ func ESDateHistogram(prefix string, e *State, T miniprofiler.Timer, indexer ESIn
 		return r, nil
 	}
 	keys := strings.Split(keystring, ",")
-	aggregation := elastic.NewTermsAggregation().Field(keys[len(keys)-1]).Size(0)
+	aggregation := elastic.NewTermsAggregation().
+		Field(keys[len(keys)-1])
 	aggregation = aggregation.SubAggregation("ts", ts)
 	for i := len(keys) - 2; i > -1; i-- {
-		aggregation = elastic.NewTermsAggregation().Field(keys[i]).Size(0).SubAggregation("g_"+keys[i+1], aggregation)
+		aggregation = elastic.NewTermsAggregation().
+			Field(keys[i]).
+			SubAggregation("g_"+keys[i+1], aggregation)
 	}
 	req.Source = req.Source.Aggregation("g_"+keys[0], aggregation)
 	result, err := timeESRequest(e, T, req)
@@ -512,7 +521,7 @@ func ESDateHistogram(prefix string, e *State, T miniprofiler.Timer, indexer ESIn
 			for _, v := range ts.Buckets {
 				val := processESBucketItem(v, rstat)
 				if val != nil {
-					series[time.Unix(v.Key/1000, 0).UTC()] = *val
+					series[time.Unix(int64(v.Key)/1000, 0).UTC()] = *val
 				}
 			}
 			if len(series) == 0 {

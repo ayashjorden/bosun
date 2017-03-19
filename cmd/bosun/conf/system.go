@@ -12,7 +12,7 @@ import (
 	"bosun.org/opentsdb"
 	"github.com/BurntSushi/toml"
 	"github.com/influxdata/influxdb/client/v2"
-	elastic "gopkg.in/olivere/elastic.v3"
+	elastic "gopkg.in/olivere/elastic.v5"
 )
 
 // SystemConf contains all the information that bosun needs to run. Outside of the conf package
